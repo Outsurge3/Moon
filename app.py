@@ -3,7 +3,18 @@
 # Run: streamlit run moon_circle_app.py
 
 import streamlit as st
-import matplotlib.pyplot as plt
+import sys
+import streamlit as st
+
+st.write("Python version:", sys.version)
+st.write("Python executable:", sys.executable)
+
+try:
+    import matplotlib
+    st.write("Matplotlib version:", matplotlib.__version__)
+except ImportError as e:
+    st.error(str(e))
+    
 import numpy as np
 from datetime import date, datetime
 
