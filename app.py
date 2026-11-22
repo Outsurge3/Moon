@@ -1,282 +1,571 @@
-# THE MOON CIRCLE - African Lunar, Seasonal & Cosmic Calendar
-# Southern Hemisphere | South Africa | SAST
-# Run: streamlit run moon_circle_app.py
+"""
+THE MOON CIRCLE
+A South-African seasonal reflection and astronomy companion.
+
+Run locally:
+    python -m pip install -r requirements.txt
+    python -m streamlit run app.py
+
+The 13 × 28-day calendar is a contemporary planning framework, not an
+astronomical or historically documented African calendar. Moon phase is an
+approximation calculated from a known reference new moon.
+"""
+
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
-import sys
-import streamlit as st
 
-st.write("Python version:", sys.version)
-st.write("Python executable:", sys.executable)
+# ---------------------------------------------------------------------
+# Page setup and constants
+# ---------------------------------------------------------------------
 
-try:
-    import matplotlib
-    st.write("Matplotlib version:", matplotlib.__version__)
-except ImportError as e:
-    st.error(str(e))
-    
-import numpy as np
-from datetime import date, datetime
+st.set_page_config(
+    page_title="The Moon Circle",
+    page_icon="🌙",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-st.set_page_config(page_title="The Moon Circle", page_icon="🌙", layout="wide")
+SA_TZ = ZoneInfo("Africa/Johannesburg")
+UTC = timezone.utc
 
-# ============ DATA - ASTRONOMICAL (SAST, South Africa) ============
-# Sources: NASA Eclipse / Timeanddate astronomical calculations for SAST (UTC+2)
-# 2026-2027 New Moons are astronomical anchors. Symbolic 28-day cycle is separate.
+APP_START = date(2026, 1, 18)
+SYMBOLIC_CYCLE_DAYS = 28
+SYMBOLIC_YEAR_DAYS = 13 * SYMBOLIC_CYCLE_DAYS
 
-COSMIC_EVENTS_2026_2027 = [
-    # (date, time SAST, event, visible_SA, type)
-    ("2026-01-18", "21:52", "New Moon", "Not visible - new moon", "Moon"),
-    ("2026-02-01", "06:09", "Full Moon", "Yes - rises evening", "Moon"),
-    ("2026-02-17", "14:01", "New Moon", "Not visible", "Moon"),
-    ("2026-03-03", "13:38", "Full Moon - Harvest Moon (SA Autumn)", "Yes", "Moon"),
-    ("2026-03-20", "16:46", "March Equinox - Autumn Equinox (Southern Hemisphere)", "Day/night equal", "Solar"),
-    ("2026-04-02", "20:12", "Full Moon", "Yes", "Moon"),
-    ("2026-04-22", "04:00", "Lyrid Meteor Shower Peak", "Yes - pre-dawn, best after midnight", "Meteor"),
-    ("2026-05-01", "07:23", "Full Moon", "Yes", "Moon"),
-    ("2026-05-16", "05:39", "Eta Aquariid Meteor Shower Peak", "Yes - excellent in SA", "Meteor"),
-    ("2026-06-21", "04:42", "June Solstice - Winter Solstice (Southern Hemisphere)", "Shortest day", "Solar"),
-    ("2026-06-29", "16:56", "Full Moon", "Yes", "Moon"),
-    ("2026-07-28", "23:00", "Delta Aquariid Meteor Shower Peak", "Yes", "Meteor"),
-    ("2026-08-12", "22:00", "Perseid Meteor Shower Peak", "Partial - low in north", "Meteor"),
-    ("2026-08-28", "06:19", "Total Lunar Eclipse", "YES - Visible in South Africa", "Eclipse"),
-    ("2026-09-23", "03:54", "September Equinox - Spring Equinox (Southern Hemisphere)", "Day/night equal", "Solar"),
-    ("2026-10-26", "05:12", "New Moon", "Not visible", "Moon"),
-    ("2026-11-24", "08:43", "Full Moon", "Yes", "Moon"),
-    ("2026-12-14", "20:00", "Geminid Meteor Shower Peak", "Yes - excellent in SA", "Meteor"),
-    ("2026-12-21", "17:03", "December Solstice - Summer Solstice (Southern Hemisphere)", "Longest day", "Solar"),
-    ("2026-12-24", "02:28", "Full Moon", "Yes - Christmas Eve", "Moon"),
-    ("2027-02-06", "22:57", "Annular Solar Eclipse", "YES - Partial visible in SA, annular path in S. America/Atlantic", "Eclipse"),
-    ("2027-02-20", "16:03", "Total Lunar Eclipse", "YES - Visible in SA at moonrise", "Eclipse"),
-    ("2027-03-20", "22:25", "March Equinox - Autumn Equinox", "Day/night equal", "Solar"),
-]
-
-# 13 x 28-day symbolic cycle = 364 days. Anchor to first New Moon after Dec Solstice 2025
-# This is SYMBOLIC for planning, NOT astronomical lunar month (29.53 days)
-MOON_CYCLE = [
-    {"n": 1, "name": "Moon 1: First Planting", "dates": "18 Jan - 14 Feb 2026", "season": "Late Summer", "theme": "Beginnings, clearing, setting intention"},
-    {"n": 2, "name": "Moon 2: Ripening", "dates": "15 Feb - 14 Mar 2026", "season": "Late Summer to Autumn", "theme": "Growth, tending, patience"},
-    {"n": 3, "name": "Moon 3: Turning", "dates": "15 Mar - 11 Apr 2026", "season": "Autumn", "theme": "Equinox, balance, harvest assessment"},
-    {"n": 4, "name": "Moon 4: Gathering", "dates": "12 Apr - 9 May 2026", "season": "Autumn", "theme": "Harvest, gratitude, storing"},
-    {"n": 5, "name": "Moon 5: Letting Go", "dates": "10 May - 6 Jun 2026", "season": "Autumn to Winter", "theme": "Release, composting, rest"},
-    {"n": 6, "name": "Moon 6: Stillness", "dates": "7 Jun - 4 Jul 2026", "season": "Winter", "theme": "Solstice, introspection, restoration"},
-    {"n": 7, "name": "Moon 7: Deep Roots", "dates": "5 Jul - 1 Aug 2026", "season": "Winter", "theme": "Wisdom, family, foundations"},
-    {"n": 8, "name": "Moon 8: First Bud", "dates": "2 Aug - 29 Aug 2026", "season": "Winter to Spring", "theme": "Preparation, quiet hope"},
-    {"n": 9, "name": "Moon 9: Blossoming", "dates": "30 Aug - 26 Sep 2026", "season": "Spring", "theme": "Equinox, renewal, planting"},
-    {"n": 10, "name": "Moon 10: Rain Calling", "dates": "27 Sep - 24 Oct 2026", "season": "Spring", "theme": "Nourishment, growth, intention"},
-    {"n": 11, "name": "Moon 11: Abundance", "dates": "25 Oct - 21 Nov 2026", "season": "Spring to Summer", "theme": "Vitality, generosity, expression"},
-    {"n": 12, "name": "Moon 12: Full Sun", "dates": "22 Nov - 19 Dec 2026", "season": "Summer", "theme": "Solstice, celebration, joy"},
-    {"n": 13, "name": "Moon 13: Completion", "dates": "20 Dec - 16 Jan 2027", "season": "Summer", "theme": "Integration, rest, closing the year"},
-]
-
-# ============ RITUAL LIBRARY ============
-# Each ritual has 5 / 15 / 30 min versions. All are CONTEMPORARY wellness rituals unless marked DOCUMENTED.
-
-def ritual_card(title, purpose, prep, materials, steps_5, steps_15, steps_30, reflection, affirmation, origin="Contemporary - Developed for The Moon Circle"):
-    st.markdown(f"### {title}")
-    st.caption(f"Origin: {origin}")
-    st.write(f"**Purpose:** {purpose}")
-    st.write(f"**Preparation:** {prep}")
-    st.write(f"**Materials:** {materials}")
-    tab1, tab2, tab3 = st.tabs(["⏱️ 5 min - Minimum", "⏱️ 15 min - Standard", "⏱️ 30 min - Extended"])
-    with tab1:
-        for s in steps_5: st.write(f"- {s}")
-    with tab2:
-        for s in steps_15: st.write(f"- {s}")
-    with tab3:
-        for s in steps_30: st.write(f"- {s}")
-    st.write(f"**Reflection:** {reflection}")
-    st.write(f"**Closing:** *{affirmation}*")
-    st.divider()
+# Reference new moon: 2000-01-06 18:14 UTC.
+# This produces an approximate phase, not a precision ephemeris.
+REFERENCE_NEW_MOON = datetime(2000, 1, 6, 18, 14, tzinfo=UTC)
+SYNODIC_MONTH = 29.530588853
 
 SEASONS = {
-    "Spring (Sep-Nov) - Rebirth, Planting, Renewal": {
-        "opening": "Plant one seed (real or symbolic) and name one intention you will water daily.",
-        "weekly": ["Week 1: Clear one space in home", "Week 2: Plant / start one new habit", "Week 3: Walk in nature, notice new growth", "Week 4: Share seedlings / kindness"],
-        "daily": "2 min morning: Face sun, breathe, name 1 intention. Evening: What grew today?",
-        "physical": "30-min walk, gardening, stretching in morning sun.",
-        "nature": "Visit a garden, park, or water. Notice buds, birds returning.",
-        "closing": "Harvest list: Write 10 things that grew this season. Burn / bury list with gratitude."
+    "Summer": {
+        "months": "December – February",
+        "theme": "Vitality, abundance and joy",
+        "description": "A season often associated with warmth, longer days and outdoor life in much of South Africa.",
+        "opening": "Choose one thing you would like to enjoy or share this season.",
+        "weekly": [
+            "Notice one activity that gives you energy.",
+            "Prepare or share a meal with someone.",
+            "Spend time outdoors during a comfortable part of the day.",
+            "Pass on an item or skill that may help someone else.",
+        ],
+        "daily": "Name one good moment from the day.",
+        "nature": "Notice changes in daylight, heat, rain and plant growth.",
+        "closing": "Write down what you enjoyed and what you want to carry forward.",
     },
-    "Summer (Dec-Feb) - Vitality, Abundance, Joy": {
-        "opening": "Share food / water with someone. Set a generosity intention.",
-        "weekly": ["Week 1: Joy audit - what gives energy?", "Week 2: Cook for family", "Week 3: Swim / outdoor play", "Week 4: Give away what you no longer need"],
-        "daily": "Morning: Drink water mindfully. Evening: 3 joys of the day.",
-        "physical": "Swimming, dancing, early morning walk before heat.",
-        "nature": "Sit under tree at midday, watch shade and light.",
-        "closing": "Celebration meal, gratitude for abundance, rest before autumn."
+    "Autumn": {
+        "months": "March – May",
+        "theme": "Harvest, gratitude and adjustment",
+        "description": "A time to notice what has matured, what has changed and what needs attention.",
+        "opening": "Think of one effort that has produced a result, however small.",
+        "weekly": [
+            "Review one goal and the progress you have made.",
+            "Organise something you want to keep or preserve.",
+            "Pass on, recycle or donate an item you no longer need.",
+            "Thank someone who has helped you.",
+        ],
+        "daily": "Ask: what did I learn today?",
+        "nature": "Notice changing leaves, temperatures and seasonal weather.",
+        "closing": "Record three things you learned or completed this season.",
     },
-    "Autumn (Mar-May) - Harvest, Gratitude, Release": {
-        "opening": "Lay out harvest - food, work, lessons. Thank each one.",
-        "weekly": ["Week 1: Assess finances / work", "Week 2: Preserve / save / store", "Week 3: Let go of one habit / item", "Week 4: Thank elders / mentors"],
-        "daily": "Morning: What am I harvesting? Evening: What can I release?",
-        "physical": "Slower walks, strength work, warm foods.",
-        "nature": "Collect fallen leaves, compost, notice trees letting go.",
-        "closing": "Release ceremony: Write what to release, safely burn / tear and compost."
+    "Winter": {
+        "months": "June – August",
+        "theme": "Rest, reflection and foundations",
+        "description": "A useful season for slower routines, learning and preparing for future projects.",
+        "opening": "Choose one area of life where a little more rest or structure would help.",
+        "weekly": [
+            "Make one small improvement to your space.",
+            "Ask a family member about a memory or lesson.",
+            "Spend time on a skill you want to develop.",
+            "Make a simple plan for the next season.",
+        ],
+        "daily": "Take a quiet moment and write one sentence about your day.",
+        "nature": "Notice the night sky, cooler air and changes in daylight.",
+        "closing": "Write down one lesson you want to remember.",
     },
-    "Winter (Jun-Aug) - Stillness, Restoration, Wisdom": {
-        "opening": "Light a candle. Commit to rest and listening this season.",
-        "weekly": ["Week 1: Digital sunset - no phone after 20:00", "Week 2: Story night - share family stories", "Week 3: Deep clean one room", "Week 4: Plan for spring"],
-        "daily": "Morning: Slow tea, journal 3 lines. Evening: Silence 5 min.",
-        "physical": "Gentle yoga, warm baths, early sleep.",
-        "nature": "Star-gazing, notice bare branches, cold air breathing.",
-        "closing": "Solstice reflection: What wisdom did winter teach me?"
+    "Spring": {
+        "months": "September – November",
+        "theme": "Renewal, planting and new beginnings",
+        "description": "A season often associated with new growth and warmer days in much of South Africa.",
+        "opening": "Choose one small intention and one practical action that supports it.",
+        "weekly": [
+            "Clear or organise one small area.",
+            "Begin a manageable habit or project.",
+            "Notice new growth in a garden or local green space.",
+            "Share encouragement, knowledge or a useful resource.",
+        ],
+        "daily": "Ask: what small thing can I help grow today?",
+        "nature": "Notice buds, insects, birds, rainfall and changing temperatures.",
+        "closing": "List what began, improved or became clearer this season.",
     },
 }
 
-# ============ APP UI ============
+SEASON_ORDER = ["Summer", "Autumn", "Winter", "Spring"]
+
+RITUALS = [
+    {
+        "title": "Morning Intention",
+        "category": "Morning",
+        "purpose": "Begin the day with a clear, realistic priority.",
+        "materials": "Optional notebook and water.",
+        "five": ["Pause for three calm breaths.", "Choose one priority for today.", "Name the first small action."],
+        "fifteen": ["Take a quiet moment.", "Write one priority and why it matters.", "Break it into a first step.", "Stretch or move gently if comfortable."],
+        "thirty": ["Review yesterday without judging yourself.", "Write one priority.", "Plan the first two steps.", "Spend a few minutes outside or near a window.", "Finish by choosing when to begin."],
+        "reflection": "What would make today feel meaningful?",
+        "closing": "I can begin with one manageable step.",
+    },
+    {
+        "title": "Evening Reflection",
+        "category": "Evening",
+        "purpose": "Create a gentle transition from the day to rest.",
+        "materials": "Optional notebook; no special equipment needed.",
+        "five": ["Take three slow breaths.", "Name one thing that went well.", "Choose one thought to leave for tomorrow."],
+        "fifteen": ["Put away one distraction.", "Write three things you noticed today.", "Identify anything that needs attention tomorrow."],
+        "thirty": ["Make a warm drink if you like.", "Write about one challenge and one success.", "Prepare one thing that will make tomorrow easier.", "Spend a few quiet minutes reading or listening to calm sounds."],
+        "reflection": "What can wait until tomorrow?",
+        "closing": "Rest is part of a balanced life.",
+    },
+    {
+        "title": "New Moon: Begin Again",
+        "category": "New Moon",
+        "purpose": "Use the new-moon idea as a prompt for setting an intention.",
+        "materials": "Paper or a notes app.",
+        "five": ["Choose one intention.", "Write one practical action.", "Decide when to take that action."],
+        "fifteen": ["Review what has changed recently.", "Write up to three intentions.", "Choose the most important one.", "Make its first step specific."],
+        "thirty": ["Reflect on the past few weeks.", "Write what you want to begin, continue and change.", "Choose one small commitment.", "Put a reminder somewhere useful."],
+        "reflection": "What am I ready to begin?",
+        "closing": "A clear intention becomes useful through action.",
+    },
+    {
+        "title": "Full Moon: Review and Appreciate",
+        "category": "Full Moon",
+        "purpose": "Reflect on progress and recognise what deserves appreciation.",
+        "materials": "Optional notebook.",
+        "five": ["Name one thing you appreciate.", "Name one thing you learned.", "Choose one next step."],
+        "fifteen": ["Review a goal.", "Write down progress, including small steps.", "Thank someone who supported you."],
+        "thirty": ["Look back over the last few weeks.", "Record achievements and lessons.", "Notice what needs adjusting.", "Choose one next step for the coming days."],
+        "reflection": "What has changed since I last checked in?",
+        "closing": "Progress can be gradual and still matter.",
+    },
+    {
+        "title": "Gratitude Pause",
+        "category": "Gratitude",
+        "purpose": "Pay attention to people, moments and resources you value.",
+        "materials": "None.",
+        "five": ["Name three things you appreciate.", "Choose one person you could thank."],
+        "fifteen": ["Write five specific things you appreciate.", "Send a genuine thank-you message if appropriate.", "Notice how those moments came about."],
+        "thirty": ["Write about people who have supported you.", "Recall a small moment that made you happy.", "Choose one practical way to show appreciation."],
+        "reflection": "What might I overlook when life gets busy?",
+        "closing": "I can notice and appreciate the good around me.",
+    },
+    {
+        "title": "Let Go and Make Space",
+        "category": "Release",
+        "purpose": "Identify one manageable thing you no longer need to carry forward.",
+        "materials": "Optional paper and a recycling bin.",
+        "five": ["Name one task, worry or habit you want to address.", "Write one small action you can take."],
+        "fifteen": ["Write down what is taking up attention.", "Separate what you can influence from what you cannot.", "Choose one practical next step."],
+        "thirty": ["Tidy one small area or organise one list.", "Write what you want to change.", "Recycle or put away the paper if you used it.", "Choose a realistic next action."],
+        "reflection": "What can I simplify?",
+        "closing": "I can make space through small, practical choices.",
+    },
+]
+
+# ---------------------------------------------------------------------
+# Date and astronomy helpers
+# ---------------------------------------------------------------------
+
+def south_african_today() -> date:
+    return datetime.now(SA_TZ).date()
+
+
+def season_for_day(day: date) -> str:
+    month = day.month
+    if month in (12, 1, 2):
+        return "Summer"
+    if month in (3, 4, 5):
+        return "Autumn"
+    if month in (6, 7, 8):
+        return "Winter"
+    return "Spring"
+
+
+def moon_age_days(day: date) -> float:
+    local_midday = datetime(day.year, day.month, day.day, 12, tzinfo=SA_TZ)
+    age = (local_midday.astimezone(UTC) - REFERENCE_NEW_MOON).total_seconds() / 86400
+    return age % SYNODIC_MONTH
+
+
+def moon_phase(day: date):
+    age = moon_age_days(day)
+    fraction = age / SYNODIC_MONTH
+    illumination = (1 - __import__("math").cos(2 * __import__("math").pi * fraction)) / 2
+
+    if age < 1.85 or age >= SYNODIC_MONTH - 1.85:
+        name, emoji = "New Moon", "🌑"
+    elif age < 5.53:
+        name, emoji = "Waxing Crescent", "🌒"
+    elif age < 9.22:
+        name, emoji = "First Quarter", "🌓"
+    elif age < 12.91:
+        name, emoji = "Waxing Gibbous", "🌔"
+    elif age < 16.61:
+        name, emoji = "Full Moon", "🌕"
+    elif age < 20.30:
+        name, emoji = "Waning Gibbous", "🌖"
+    elif age < 23.99:
+        name, emoji = "Last Quarter", "🌗"
+    else:
+        name, emoji = "Waning Crescent", "🌘"
+
+    return name, emoji, round(illumination * 100), round(age, 1)
+
+
+def symbolic_moon_for_day(day: date):
+    offset = (day - APP_START).days
+    cycle_index = (offset // SYMBOLIC_CYCLE_DAYS) % 13
+    cycle_number = (offset // SYMBOLIC_CYCLE_DAYS) + 1
+    start = APP_START + timedelta(days=(offset // SYMBOLIC_CYCLE_DAYS) * SYMBOLIC_CYCLE_DAYS)
+    end = start + timedelta(days=SYMBOLIC_CYCLE_DAYS - 1)
+    names = [
+        ("First Planting", "Beginnings, clearing and setting intention"),
+        ("Ripening", "Growth, tending and patience"),
+        ("Turning", "Balance and reviewing progress"),
+        ("Gathering", "Harvest, gratitude and storing"),
+        ("Letting Go", "Release, composting and rest"),
+        ("Stillness", "Restoration and reflection"),
+        ("Deep Roots", "Wisdom, family and foundations"),
+        ("First Bud", "Preparation and quiet hope"),
+        ("Blossoming", "Renewal and planting"),
+        ("Rain Calling", "Nourishment, growth and intention"),
+        ("Abundance", "Vitality, generosity and expression"),
+        ("Full Sun", "Celebration, joy and energy"),
+        ("Completion", "Integration, rest and closing a cycle"),
+    ]
+    name, theme = names[cycle_index]
+    return {
+        "number": cycle_number,
+        "name": name,
+        "theme": theme,
+        "start": start,
+        "end": end,
+        "within_cycle": (day - start).days + 1,
+    }
+
+
+def format_date(day: date) -> str:
+    return day.strftime("%A, %d %B %Y")
+
+
+def render_ritual(ritual):
+    st.subheader(ritual["title"])
+    st.caption(f"Category: {ritual['category']} · Contemporary practice created for this app")
+    st.write(ritual["purpose"])
+    st.caption(f"Materials: {ritual['materials']}")
+    t1, t2, t3 = st.tabs(["5 minutes", "15 minutes", "30 minutes"])
+    with t1:
+        for step in ritual["five"]:
+            st.write(f"- {step}")
+    with t2:
+        for step in ritual["fifteen"]:
+            st.write(f"- {step}")
+    with t3:
+        for step in ritual["thirty"]:
+            st.write(f"- {step}")
+    st.write(f"**Reflection:** {ritual['reflection']}")
+    st.write(f"*{ritual['closing']}*")
+    st.divider()
+
+
+# ---------------------------------------------------------------------
+# Sidebar and shared header
+# ---------------------------------------------------------------------
+
+today = south_african_today()
+
+st.sidebar.title("🌙 The Moon Circle")
+st.sidebar.caption("A seasonal reflection companion")
+page = st.sidebar.radio(
+    "Explore",
+    [
+        "Today",
+        "13-Moon Calendar",
+        "Seasonal Wheel",
+        "Seasonal Programmes",
+        "Cosmic & Moon Guide",
+        "Ritual Library",
+        "Cultural Notes",
+        "Journal",
+    ],
+)
+st.sidebar.divider()
+st.sidebar.caption("South Africa · SAST (UTC+2)")
+st.sidebar.caption("Version 2.0 · Educational and reflective")
 
 st.title("🌙 The Moon Circle")
-st.subheader("African Lunar, Seasonal & Cosmic Calendar  •  Southern Hemisphere  •  South Africa (SAST)")
-st.info("⚖️ **Cultural Integrity:** This app distinguishes 4 things: 1) **Scientific astronomy**, 2) **Documented traditional knowledge** (with attribution), 3) **Contemporary interpretations**, 4) **New rituals created for this app**. It is NOT an authority on all African traditions. Please seek guidance from knowledgeable practitioners in your community.")
+st.markdown(
+    "A South African seasonal reflection and sky-awareness companion. "
+    "Use the symbolic calendar for planning and the astronomy guide for "
+    "approximate sky information."
+)
 
-menu = st.sidebar.radio("Navigate", ["🏠 Today", "🌑 13-Moon Calendar", "🌀 Seasonal Wheel", "🌿 Seasonal Programmes", "✨ Cosmic Events", "📚 Ritual Library", "🏛️ Cultural Traditions"])
+with st.expander("A note about culture, science and this calendar"):
+    st.markdown(
+        """
+        - **Astronomy:** Moon phase is estimated mathematically and is not a
+          substitute for a professional ephemeris or local sky forecast.
+        - **Symbolic calendar:** The 13 periods of 28 days are a contemporary
+          planning framework created for this app. They are not presented as
+          an ancient, universal or specifically Zulu calendar.
+        - **Seasonal programme:** The four seasons use the Southern Hemisphere
+          month pattern as a broad guide. Local weather and ecology vary.
+        - **Rituals:** The activities in this app are contemporary reflection
+          exercises, not ceremonies claimed to belong to a particular culture.
+        - **Cultural knowledge:** Traditions differ between communities and
+          knowledge holders. The app avoids assigning sacred practices or
+          unverified month names to whole peoples.
+        """
+    )
 
-# TODAY
-if menu == "🏠 Today":
-    today = date.today()
-    st.header(f"Today: {today.strftime('%A, %d %B %Y')} - South Africa")
-    st.write("**Season now (Southern Hemisphere):** Spring (Sep-Nov) - Rebirth, planting, renewal")
-    st.write("**Moon:** Check tonight - Moon phase follows astronomical cycle. Full Moon 24 Dec 2026 will be visible across SA.")
-    st.write("**Today's Practice (5 min):** Stand outside. Notice light, wind, temperature. Name 1 thing you are planting this week.")
-    st.success("Working-person tip: Do Minimum version on busy days. Consistency > perfection.")
-    if st.button("Get Today's Ritual"):
-        st.write("**Morning (5 min):** Water + breath + 1 intention. **Evening (5 min):** 3 gratitudes, 1 release.")
+# ---------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------
 
-# 13-MOON
-elif menu == "🌑 13-Moon Calendar":
+if page == "Today":
+    season = season_for_day(today)
+    phase, phase_icon, illumination, age = moon_phase(today)
+    symbolic = symbolic_moon_for_day(today)
+
+    st.header(f"Today · {format_date(today)}")
+    st.caption("Date and time zone: South Africa Standard Time")
+
+    a, b, c = st.columns(3)
+    a.metric("Season", season, SEASONS[season]["months"])
+    b.metric("Approximate Moon Phase", f"{phase_icon} {phase}")
+    c.metric("Estimated illumination", f"{illumination}%")
+
+    st.subheader(f"Your symbolic period: Moon {symbolic['number']} – {symbolic['name']}")
+    st.write(f"**Theme:** {symbolic['theme']}")
+    st.write(
+        f"**Dates:** {symbolic['start'].strftime('%d %b %Y')} – "
+        f"{symbolic['end'].strftime('%d %b %Y')} "
+        f"({symbolic['within_cycle']} of 28 days)"
+    )
+
+    st.subheader("A small practice for today")
+    st.write(SEASONS[season]["daily"])
+    st.info("Keep it manageable. A short reflection is enough; you do not need to complete every activity.")
+
+    with st.expander("What does the Moon estimate mean?"):
+        st.write(
+            f"The calculated lunar age is about {age} days into an average "
+            f"{SYNODIC_MONTH:.2f}-day cycle. Actual visible appearance depends "
+            "on location, weather, horizon and observation time."
+        )
+
+elif page == "13-Moon Calendar":
     st.header("The 13-Moon Calendar")
-    st.warning("**Symbolic vs Astronomical:** A symbolic cycle is 13 x 28 days = 364 days, used for planning. A real lunar month is ~29.53 days from New Moon to New Moon, so it drifts. We show BOTH. Use symbolic for rhythm, astronomical for sky-watching.")
-    for m in MOON_CYCLE:
-        with st.expander(f"{m['name']} • {m['dates']} • {m['season']}"):
-            st.write(f"**Theme:** {m['theme']}")
-            st.write("**Explore:** What is growing? What needs tending? What needs releasing?")
-            st.write("**Practice:** New Moon - set intention. Full Moon - review & gratitude. Last Quarter - release.")
-    st.write("**Lunar-Solar Relationship:** The Sun gives seasons (solstice/equinox). The Moon gives monthly rhythm. Together they create the year.")
+    st.warning(
+        "This is a symbolic planning calendar: 13 × 28 days = 364 days. "
+        "It does not match the astronomical lunar cycle, which averages "
+        "about 29.53 days. Its dates are calculated from 18 January 2026."
+    )
 
-# WHEEL
-elif menu == "🌀 Seasonal Wheel":
-    st.header("The African Seasonal Wheel")
-    st.write("Click / view - Outer ring = 13 Moons, Middle = Seasons, Inner = Solar events. Tap a section below to explore.")
-    # Draw wheel
-    fig, ax = plt.subplots(figsize=(7,7))
-    ax.set_aspect('equal'); ax.axis('off')
-    # Seasons - 4 quadrants (Southern Hemisphere: Dec at top)
-    seasons = [("Summer\nDec-Feb", "#FFD54F"), ("Autumn\nMar-May", "#FF8A65"), ("Winter\nJun-Aug", "#81D4FA"), ("Spring\nSep-Nov", "#A5D6A7")]
-    # Draw 13 moons as outer ring
-    angles = np.linspace(90, 90-360, 14)
+    chosen_date = st.date_input("Explore a date", value=today)
+    item = symbolic_moon_for_day(chosen_date)
+    st.subheader(f"Moon {item['number']} · {item['name']}")
+    st.write(f"**Period:** {item['start'].strftime('%d %B %Y')} – {item['end'].strftime('%d %B %Y')}")
+    st.write(f"**Day in period:** {item['within_cycle']} / 28")
+    st.write(f"**Theme:** {item['theme']}")
+    st.write("**Reflection:** What is growing, what needs attention, and what can be simplified?")
+
+    st.divider()
+    st.subheader("All 13 periods")
     for i in range(13):
-        a1, a2 = np.deg2rad(angles[i]), np.deg2rad(angles[i+1])
-        ax.add_patch(plt.matplotlib.patches.Wedge((0,0), 1.0, np.rad2deg(a2), np.rad2deg(a1), width=0.22, facecolor=plt.cm.viridis(i/13), edgecolor='white'))
-        mid = np.deg2rad((angles[i]+angles[i+1])/2)
-        ax.text(0.89*np.cos(mid), 0.89*np.sin(mid), f"{i+1}", ha='center', va='center', fontsize=9, color='white', weight='bold')
-    # Seasons inner
-    for i, (label, col) in enumerate(seasons):
-        # Summer at top (90 deg) going clockwise
-        start = 90 - i*90
-        ax.add_patch(plt.matplotlib.patches.Wedge((0,0), 0.75, start-90, start, width=0.35, facecolor=col, edgecolor='white', alpha=0.9))
-        mid = np.deg2rad(start-45)
-        ax.text(0.57*np.cos(mid), 0.57*np.sin(mid), label, ha='center', va='center', fontsize=8, weight='bold')
-    ax.text(0,0,"THE\nMOON\nCIRCLE", ha='center', va='center', fontsize=14, weight='bold')
-    ax.text(0,-1.25,"Outer: 13 Moons • Middle: 4 Seasons • Centre: You", ha='center', fontsize=9)
-    st.pyplot(fig)
-    sel = st.selectbox("Explore a Moon:", [m['name'] for m in MOON_CYCLE])
-    m = [x for x in MOON_CYCLE if x['name']==sel][0]
-    st.success(f"**{m['name']}** - {m['dates']} | {m['season']} | {m['theme']}")
+        start = APP_START + timedelta(days=i * SYMBOLIC_CYCLE_DAYS)
+        end = start + timedelta(days=27)
+        names = [
+            "First Planting", "Ripening", "Turning", "Gathering",
+            "Letting Go", "Stillness", "Deep Roots", "First Bud",
+            "Blossoming", "Rain Calling", "Abundance", "Full Sun",
+            "Completion",
+        ]
+        with st.expander(f"Moon {i + 1}: {names[i]} · {start:%d %b %Y} – {end:%d %b %Y}"):
+            st.write("This is one 28-day section of the app's symbolic planning year.")
+            st.write("Use the theme as a prompt, not as a rule or prediction.")
 
-# SEASONAL PROGRAMMES
-elif menu == "🌿 Seasonal Programmes":
-    st.header("Seasonal Ritual Engine - 4 Programmes")
-    choice = st.selectbox("Choose Season:", list(SEASONS.keys()))
-    s = SEASONS[choice]
-    st.subheader(f"Opening Ceremony: {choice}")
-    st.write(s['opening'])
-    st.write(f"**Weekly Activities:**")
-    for w in s['weekly']: st.write(f"- {w}")
-    st.write(f"**Daily Mindfulness:** {s['daily']}")
-    st.write(f"**Physical:** {s['physical']}")
-    st.write(f"**Nature Connection:** {s['nature']}")
-    st.write(f"**Evening Reflection:** What did I learn today? What am I grateful for?")
-    st.write(f"**Closing Ceremony:** {s['closing']}")
-    st.info("Working-person: Opening & Closing = 30 min on a weekend. Daily = 5 min. Weekly = 15 min.")
+elif page == "Seasonal Wheel":
+    st.header("Southern Hemisphere Seasonal Wheel")
+    st.caption("A simple seasonal overview — not a claim about one shared African traditional calendar.")
 
-# COSMIC EVENTS
-elif menu == "✨ Cosmic Events":
-    st.header("Cosmic Event Engine - SAST")
-    st.write("All times in **South African Standard Time (UTC+2)**. Visibility from South Africa shown.")
-    filter_type = st.selectbox("Filter:", ["All", "Moon", "Solar", "Eclipse", "Meteor"])
-    for d, t, ev, vis, typ in COSMIC_EVENTS_2026_2027:
-        if filter_type != "All" and filter_type != typ: continue
-        with st.expander(f"{d} {t} SAST - {ev}"):
-            st.write(f"**Visible from SA:** {vis}")
-            st.write(f"**Reflective Ritual (15 min):** 1) Step outside / look at sky photo (5 min), 2) Journal: What is this event teaching me about cycles? (5 min), 3) Set one small action for the next moon (5 min)")
-            st.write(f"**Closing:** *I move with the rhythm of sky and earth.*")
+    wheel_cols = st.columns(4)
+    season_emojis = {"Summer": "☀️", "Autumn": "🍂", "Winter": "❄️", "Spring": "🌱"}
+    for col, season_name in zip(wheel_cols, SEASON_ORDER):
+        data = SEASONS[season_name]
+        with col:
+            st.markdown(f"### {season_emojis[season_name]} {season_name}")
+            st.write(data["months"])
+            st.caption(data["theme"])
 
-# RITUAL LIBRARY
-elif menu == "📚 Ritual Library":
-    st.header("Ritual Library - Searchable")
-    search = st.text_input("Search ritual (e.g. morning, new moon, gratitude):", "").lower()
-    cat = st.selectbox("Category:", ["All", "Morning", "Evening", "New Moon", "Full Moon", "Seasonal", "Gratitude", "Nature", "Silence", "Release"])
+    st.divider()
+    selected = st.selectbox("Explore a season", SEASON_ORDER, index=SEASON_ORDER.index(season_for_day(today)))
+    data = SEASONS[selected]
+    st.subheader(f"{selected}: {data['theme']}")
+    st.write(data["description"])
+    st.write(f"**Opening reflection:** {data['opening']}")
+    st.write("**Ideas for the weeks:**")
+    for activity in data["weekly"]:
+        st.write(f"- {activity}")
+    st.write(f"**Daily prompt:** {data['daily']}")
+    st.write(f"**Nature observation:** {data['nature']}")
+    st.write(f"**Closing reflection:** {data['closing']}")
 
-    # Rituals
-    rituals = []
-    if cat in ["All", "Morning"] and ("morning" in search or search==""):
-        ritual_card("🌅 Morning Intention Ritual", "Start day with clarity", "Water, quiet corner", "Water, journal if you have it",
-            ["Drink water slowly", "3 deep breaths", "Name 1 intention"],
-            ["Drink water", "5 min breath", "Write 3 intentions", "Stretch 5 min"],
-            ["Drink water", "10 min journal", "10 min walk outside", "5 min gratitude", "5 min planning"],
-            "What do I want to grow today?", "I begin with intention and kindness.")
-    if cat in ["All", "Evening"] and ("evening" in search or search==""):
-        ritual_card("🌙 Evening Release Ritual", "End day, let go of stress", "Dim lights, phone off", "Candle (optional)",
-            ["3 breaths", "Name 1 thing to release", "Breathe out"],
-            ["Journal 3 gratitudes", "Body scan 5 min", "Release list 5 min"],
-            ["Warm bath / tea", "Journal 10 min", "10 min silence", "Forgiveness reflection"],
-            "What can I put down tonight?", "I rest. Tomorrow is new.")
-    if cat in ["All", "New Moon"] and ("new" in search or search==""):
-        ritual_card("🌑 New Moon Ceremony", "Set intention for new cycle", "Quiet, dark sky if possible", "Paper, pen",
-            ["Breathe", "Write 1 intention", "Place paper where you see it"],
-            ["Clean space", "Write 3 intentions", "Visualise 5 min", "Commit to 1 action"],
-            ["Clean + candle", "Review last moon 10 min", "Write intentions 10 min", "Meditation 10 min"],
-            "What is ready to begin?", "I plant with trust.")
-    if cat in ["All", "Full Moon"] and ("full" in search or search==""):
-        ritual_card("🌕 Full Moon Reflection", "Review, gratitude, celebrate", "Outside or window", "None",
-            ["Look at moon", "Name 1 gratitude", "Breathe"],
-            ["Walk 5 min", "Journal wins 5 min", "Gratitude 5 min"],
-            ["Moon walk 10 min", "Journal 10 min", "Share gratitude with family 10 min"],
-            "What has come to fullness?", "I am grateful for what is.")
-    if cat in ["All", "Gratitude"] and ("gratitude" in search or search==""):
-        ritual_card("🙏 Gratitude Practice", "Cultivate appreciation", "Quiet", "Journal",
-            ["Name 3 things you're grateful for"],
-            ["Write 5 gratitudes", "Thank one person by message"],
-            ["Write 10 gratitudes", "Cook / share food", "Call elder to thank"],
-            "Who helped me this week?", "I have enough. I am enough.")
-    if cat in ["All", "Release"] and ("release" in search or search==""):
-        ritual_card("🍂 Release & Renewal", "Let go safely", "Safe space", "Paper, bin / compost",
-            ["Write 1 thing to release", "Tear paper"],
-            ["Write 3 releases", "Breathe, tear, compost"],
-            ["Walk 10 min", "Write + burn safely / tear", "Plan new habit"],
-            "What no longer serves me?", "I release with love. I make space.")
-    if not rituals and search:
-        st.write("Try: morning, evening, new moon, full moon, gratitude, release")
+elif page == "Seasonal Programmes":
+    st.header("Seasonal Programmes")
+    selected = st.selectbox("Choose a season", SEASON_ORDER, index=SEASON_ORDER.index(season_for_day(today)))
+    data = SEASONS[selected]
+    st.subheader(f"{selected} · {data['months']}")
+    st.write(data["description"])
+    st.markdown(f"**Start here:** {data['opening']}")
+    st.markdown("**Weekly activities**")
+    for activity in data["weekly"]:
+        st.write(f"- {activity}")
+    st.markdown(f"**Daily mindfulness prompt:** {data['daily']}")
+    st.markdown(f"**Nature connection:** {data['nature']}")
+    st.markdown(f"**End-of-season reflection:** {data['closing']}")
+    st.info("Choose only the activities that are useful and practical for your circumstances.")
 
-# CULTURAL TRADITIONS
-elif menu == "🏛️ Cultural Traditions":
-    st.header("Cultural Traditions - Documented Knowledge Only")
-    st.warning("We do NOT invent month names or ceremonies. Names vary by region, clan, and language. Below are documented examples - presented separately.")
-    st.subheader("Zulu (isiZulu) - KwaZulu-Natal")
-    st.write("Documented Zulu lunar calendar is tied to agricultural and ecological markers. Examples documented by historians/linguists include months linked to planting, first fruits, and rains. Names and order differ between sources. Always confirm with local elders / izangoma in your area.")
-    st.write("Example documented names in some sources: uMasingana, uNhlolanja, uNdasa, uMbasa, uNhlaba, uNhlangulana, uNtulikazi, uNcwaba, uMandulo, uMfumfu, uLwezi, uZibandlela. *Variation is normal - not error.*")
-    st.subheader("Xhosa (isiXhosa) - Eastern Cape")
-    st.write("Documented Xhosa months are also lunar-ecological, e.g. EyoMqungu (June - dry grass), EyoMsintsi, EyeKhala, etc. Different districts use different names. Presented separately from Zulu system.")
-    st.subheader("Sotho-Tswana (Sesotho / Setswana)")
-    st.write("Sotho calendars track seasons: Selemo (spring), Lehlabula (summer), Letshitla / Hoetla (autumn), Mariha (winter). Month names vary between Basotho, Batswana, Bapedi. Do not merge into one system.")
-    st.subheader("Khoi & San")
-    st.write("Khoi and San peoples have rich astronomical knowledge - stars used for navigation, seasonal hunting, rain prediction, and storytelling. Much knowledge is oral and held by specific communities. We do not list sacred stories here without community permission. Seek guidance from Khoi/San cultural custodians.")
-    st.subheader("How We Handle This in the App")
-    st.write("1. **Documented** = cited from published ethnography / community sources\n2. **Contemporary** = modern interpretation, labelled as such\n3. **New** = created for this app for personal development\n4. **Scientific** = NASA / astronomical data")
-    st.success("If you are a cultural practitioner and see an error, please contact us to correct it. This is a living calendar.")
+elif page == "Cosmic & Moon Guide":
+    st.header("Cosmic & Moon Guide")
+    st.write(
+        "The phase estimate below is calculated from an average lunar cycle. "
+        "It does not calculate moonrise, moonset, eclipses or local visibility."
+    )
+    chosen_date = st.date_input("Check the estimated Moon phase", value=today, key="phase_date")
+    phase, icon, illumination, age = moon_phase(chosen_date)
+    x, y, z = st.columns(3)
+    x.metric("Estimated phase", f"{icon} {phase}")
+    y.metric("Illumination", f"{illumination}%")
+    z.metric("Lunar age", f"{age} days")
+    st.caption("Approximation only. Small differences from published astronomical calendars are expected.")
 
-st.sidebar.markdown("in ---")
-st.sidebar.write("🌙 The Moon Circle v1.0")
-st.sidebar.write("Made for South Africa • SAST")
-st.sidebar.write("Working-person friendly: 5 / 15 / 30 min versions")
+    st.subheader("The eight commonly used phase names")
+    phases = [
+        ("🌑", "New Moon", "The Moon is near the Sun in the sky and is difficult to see."),
+        ("🌒", "Waxing Crescent", "The illuminated portion appears to grow."),
+        ("🌓", "First Quarter", "About half of the visible disk is illuminated."),
+        ("🌔", "Waxing Gibbous", "More than half is illuminated and growing."),
+        ("🌕", "Full Moon", "The visible disk is close to fully illuminated."),
+        ("🌖", "Waning Gibbous", "The illuminated portion appears to shrink."),
+        ("🌗", "Last Quarter", "About half of the visible disk is illuminated again."),
+        ("🌘", "Waning Crescent", "A thinner crescent remains before the next new moon."),
+    ]
+    for emoji, name, description in phases:
+        st.write(f"**{emoji} {name}:** {description}")
+
+    st.subheader("Seasonal sky observation")
+    st.write(
+        "If you choose to observe the sky, do so from a safe, familiar place. "
+        "Never look directly at the Sun, including during an eclipse. Use "
+        "certified solar viewing equipment for solar events."
+    )
+    st.caption(
+        "This version does not publish a dated eclipse or meteor-shower timetable. "
+        "Check a current astronomy source before planning an observation."
+    )
+
+elif page == "Ritual Library":
+    st.header("Ritual Library")
+    st.write("These are contemporary reflection exercises written for The Moon Circle.")
+    query = st.text_input("Search by title, category or keyword", placeholder="Try: gratitude, evening, moon")
+    categories = ["All"] + sorted({r["category"] for r in RITUALS})
+    category = st.selectbox("Filter by category", categories)
+
+    filtered = []
+    for ritual in RITUALS:
+        searchable = " ".join([
+            ritual["title"], ritual["category"], ritual["purpose"],
+            ritual["reflection"], ritual["closing"],
+        ]).casefold()
+        matches_query = not query.strip() or query.casefold().strip() in searchable
+        matches_category = category == "All" or ritual["category"] == category
+        if matches_query and matches_category:
+            filtered.append(ritual)
+
+    if filtered:
+        for ritual in filtered:
+            render_ritual(ritual)
+    else:
+        st.info("No matching practices. Try a broader word or choose All categories.")
+
+elif page == "Cultural Notes":
+    st.header("Cultural Notes")
+    st.warning(
+        "This page is intentionally cautious. It does not claim to document "
+        "specific ceremonies, sacred knowledge or a single pan-African calendar."
+    )
+    st.subheader("Why the wording matters")
+    st.write(
+        "African communities have diverse languages, histories, ecological "
+        "knowledge and ways of marking time. Practices may differ between "
+        "regions, families and knowledge holders. A seasonal pattern used in "
+        "one place should not automatically be attributed to another."
+    )
+    st.subheader("How this app labels information")
+    st.markdown(
+        """
+        - **Scientific estimate:** a calculation or astronomical fact, with
+          its limits stated.
+        - **Seasonal guide:** a broad Southern Hemisphere month pattern.
+        - **Contemporary practice:** a reflection exercise newly written for
+          this app.
+        - **Community knowledge:** should be included only with reliable
+          sources, accurate language, clear attribution and appropriate
+          permission where required.
+        """
+    )
+    st.subheader("Before adding a cultural tradition")
+    st.write(
+        "Record the exact community and language, the source or knowledge "
+        "holder, the location and context, and any known variation. Do not "
+        "present a general internet summary as the voice of an entire people."
+    )
+    st.caption("This page is a framework for responsible research, not a substitute for community guidance.")
+
+elif page == "Journal":
+    st.header("Reflection Journal")
+    st.write(
+        "Write a private note for this session. In this starter version, "
+        "entries are kept only in the current app session and may disappear "
+        "when the app restarts or the session ends. Do not enter sensitive "
+        "personal information."
+    )
+    journal_date = st.date_input("Entry date", value=today, key="journal_date")
+    journal_text = st.text_area("Your reflection", height=180, placeholder="What did you notice, learn or appreciate?")
+    if st.button("Save this session's entry", type="primary"):
+        if journal_text.strip():
+            st.session_state.setdefault("journal_entries", [])
+            st.session_state["journal_entries"].insert(
+                0, {"date": journal_date.isoformat(), "text": journal_text.strip()}
+            )
+            st.success("Entry added to this app session.")
+        else:
+            st.warning("Write a note before saving.")
+
+    entries = st.session_state.get("journal_entries", [])
+    if entries:
+        st.subheader("Entries in this session")
+        for entry in entries:
+            with st.expander(entry["date"]):
+                st.write(entry["text"])
+    else:
+        st.caption("No entries saved in this session yet.")
+
+# Footer
+st.divider()
+st.caption(
+    "The Moon Circle · South Africa · Symbolic planning and approximate phase estimates. "
+    "Not an authoritative cultural, astronomical or medical resource."
+)
